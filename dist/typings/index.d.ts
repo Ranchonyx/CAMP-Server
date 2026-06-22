@@ -60,7 +60,7 @@ export declare class CAMPTransactionManager {
      * @param source The {@link Readable} object to be streamed
      * @param streamName Optionally, the name of the stream
      * */
-    public Stream(source: Readable, options: { streamName: string, behaviour: CAMP_FLOW_BEHAVIOUR }): Promise<void>;
+    public Stream(source: Readable, options: { streamName: string, behaviour: "pull" | "push" }): Promise<void>;
 
     /**
      * Wait for an incoming stream
