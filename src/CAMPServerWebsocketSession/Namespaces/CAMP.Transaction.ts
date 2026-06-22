@@ -185,7 +185,7 @@ export class CAMPTransactionManager extends EventEmitter implements CAMPTransact
 
         public getRangedStream(start: bigint, end: bigint) {
             Guard.AgainstNullish(this.handle);
-            return this.handle.createReadStream({start: Number(start), end: Number(end) + 1});
+            return this.handle.createReadStream({start: Number(start), end: Number(end)});
         }
 
         public async dispose() {
