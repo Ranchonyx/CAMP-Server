@@ -60,16 +60,16 @@ export class CAMPFrameInspector {
                     `[type=${typeStr}`,
                     `sid=${sid}`,
                     `ack=${BufferUtil.GetAck(message)}`,
-                    `payload[0..16]=${BufferUtil.GetPayload(message, "hex").substring(0, 16)}]`,
+                    `payload[0..16]=${BufferUtil.GetPayload(message, "hex").substring(0, 32)}]`,
                 ].join(",");
             case CAMPFrameType.TX_START: {
-                const behaviour = BufferUtil.Transaction.GetBehaviour(message);
+                const behaviour = BufferUtil.Transaction.GetFlowBehaviour(message);
                 return [
                     `[type=${typeStr}`,
                     `sid=${sid}`,
                     `ack=${BufferUtil.GetAck(message)}`,
                     `txid=${BufferUtil.Transaction.GetTxId(message)}`,
-                    `size=${BufferUtil.Transaction.GetSize(message)}`,
+                    `size=${BufferUtil.Transaction.GetTxSize(message)}`,
                     `behaviour=${behaviourToStringMap[behaviour] ?? `unknown(${behaviour})`}`,
                     `name="${BufferUtil.Transaction.GetTxName(message)}"]`,
                 ].join(",");
@@ -80,7 +80,7 @@ export class CAMPFrameInspector {
                     `sid=${sid}`,
                     `txid=${BufferUtil.Transaction.GetChunkTxId(message)}`,
                     `offset=${BufferUtil.Transaction.GetChunkOffset(message)}`,
-                    `payload[0..16]=${BufferUtil.Transaction.GetChunkPayload(message, "hex").substring(0, 16)}]`,
+                    `payload[0..16]=${BufferUtil.Transaction.GetChunkPayload(message, "hex").substring(0, 32)}]`,
                 ].join(",");
             case CAMPFrameType.TX_FINISH:
                 return [
@@ -94,7 +94,7 @@ export class CAMPFrameInspector {
                     `[type=${typeStr}`,
                     `sid=${sid}`,
                     `ack=${BufferUtil.GetAck(message)}`,
-                    `txid=${BufferUtil.Transaction.GetTxId(message)}`,
+                    `txid=${BufferUtil.Transaction.GetFetchTxId(message)}`,
                     `start=${BufferUtil.Transaction.GetFetchStart(message)}`,
                     `end=${BufferUtil.Transaction.GetFetchEnd(message)}]`,
                 ].join(",");
@@ -106,7 +106,7 @@ export class CAMPFrameInspector {
                     `txid=${BufferUtil.Transaction.GetTxId(message)}]`,
                 ].join(",");
             default:
-                return `[type=${typeStr},sid=${sid},payload[0..16]=${BufferUtil.GetPayload(message, "hex").substring(0, 16)}]`;
+                return `[type=${typeStr},sid=${sid},payload[0..16]=${BufferUtil.GetPayload(message, "hex").substring(0, 32)}]`;
         }
     }
 }
