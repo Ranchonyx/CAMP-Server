@@ -1,33 +1,33 @@
-# Cryo
+# CAMP
 
-Cryo is a small binary protocol for sending arbitrary messages, large data and real-time information over WebSocket.
+CAMP is a small binary protocol for sending arbitrary messages, large data and real-time information over WebSocket.
 It uses fixed frame types for acknowledgements, heartbeats, UTF-8 text, binary payloads and streamed transactions.
 
-This is a server implementation of the Cryo protocol specified
-at [Cryo-Protocol](https://github.com/Ranchonyx/Cryo-Protocol)
+This is a server implementation of the CAMP protocol specified
+at [CAMP-Protocol](https://github.com/Ranchonyx/CAMP-Protocol)
 
-## Cryo-Server / Overview
+## CAMP-Server / Overview
 
-The Cryo-Server takes care of the following:
+The CAMP-Server takes care of the following:
 
 - Client session authentication
 - Client session lifecycle management
 - Correct framing and structuring of received and sent data
 
-The Cryo-Server provides a public API for creating and destroying an instance.
+The CAMP-Server provides a public API for creating and destroying an instance.
 It provides access to sessions for communication purposes via events
 
-The Cryo-Server is extensible via its **Extension** interface. As such it is possible to, for example, implement an RPC
+The CAMP-Server is extensible via its **Extension** interface. As such it is possible to, for example, implement an RPC
 server.
 
 ## Setup
 
-To set up a Cryo Server, simply import the ``cryo`` function from the ``cryo-server`` package.
+To set up a CAMP Server, simply import the ``CAMP`` function from the ``CAMP-server`` package.
 
-The ``cryo``-function takes two arguments:
+The ``camp``-function takes two arguments:
 
 - a required ITokenValidator object
-- an optional ICryoWebsocketServerOptions object
+- an optional ICAMPWebsocketServerOptions object
 
 ## Configuration
 
@@ -41,12 +41,12 @@ interface ITokenValidator {
 
 This interface describes how the server will authenticate incoming connections.
 
-Cryo-Clients send a ``token``, which you may validate in the ``validate``-function.
+CAMP-Clients send a ``token``, which you may validate in the ``validate``-function.
 
-### ICryoWebsocketServerOptions
+### ICAMPWebsocketServerOptions
 
 ```typescript
-interface ICryoWebsocketServerOptions {
+interface ICAMPWebsocketServerOptions {
     keepAliveIntervalMs?: number;
     port?: number;
     ssl?: {
@@ -63,7 +63,7 @@ interface ICryoWebsocketServerOptions {
 }
 ```
 
-This interface describes various configuration options for the CryoServer:
+This interface describes various configuration options for the CAMPServer:
 
 - keepAliveIntervalMs
     - The frequency in which the server will send application-level pings to the clients, by default ``15000`` is chosen
@@ -74,7 +74,7 @@ In the ``ssl`` object, you may set a `key` and a `cert` to enable SSL connection
 
 ### Backpressure
 
-The backpressure object allows to you control how the Cryo server handles high load and prevents memory bloating
+The backpressure object allows to you control how the CAMP server handles high load and prevents memory bloating
 
 | Option           | Type                                                | Default            | Description                                                                  |
 |------------------|-----------------------------------------------------|--------------------|------------------------------------------------------------------------------|
@@ -95,27 +95,31 @@ The backpressure object allows to you control how the Cryo server handles high l
 
 ### Public methods
 
-| Name              | Parameter      | Description                                 | Returns |
-|-------------------|----------------|---------------------------------------------|---------|
-| RegisterExtension | ICryoExtension | Registers a server-side cryo extension      |         |
-| Destroy           |                | Closes the server and destroys all sessions |         |
+| Name                | Parameter                         | Description                                                                  | Returns                               |
+|---------------------|-----------------------------------|------------------------------------------------------------------------------|---------------------------------------|
+| RegisterExtension   | ext: ICAMPExtension               | Registers a server-side CAMP extension                                       |                                       |
+| UnregisterExtension | ext: ICAMPExtension               | Unregisters a server-side CAMP extension                                     |                                       |
+| GetExtension        | id: string                        | Gets a server-side CAMP extension by its id                                  | ICAMPExtension \| null                | 
+| ConnectPeer         | host: string host, bearer: string | Connects to another CAMP-server                                              | Promise\<CAMPServerWebsocketSession\> |
+| Destroy             |                                   | Closes the server and destroys all sessions                                  |                                       |
+| (get) http_server   |                                   | Returns the underlying `http.Server`-object for interop with other libraries |                                       |
 
-## Cryo-Server / Example
+## CAMP-Server / Example
 
 ```typescript
-import {cryo} from "cryo-server";
+import {CAMP} from "CAMP-server";
 
 const PORT = 8080;
-const server = await cryo({
+const server = await CAMP({
     async validate(token: string): Promise<boolean> {
         return token === "MySuperSecretToken";
     }
 }, {port: PORT});
 
 /*
-The cryo server emits events as described by the CryoWebsocketServerEvents interface
+The CAMP server emits events as described by the CAMPWebsocketServerEvents interface
 
-interface CryoWebsocketServerEvents {
+interface CAMPWebsocketServerEvents {
   "session": (session: CAMPServerWebsocketSession) => void;
 
   "listening": () => void;
@@ -123,16 +127,16 @@ interface CryoWebsocketServerEvents {
 
 as such, we can react to when the server starts listening and react to new sessions
 */
-server.on("session", async session => {
-    console.info(`Session ID: ${session.id}`);
-});
-
 server.on("listening", () => {
     console.info("Server is listening...");
+
+    server.on("session", async session => {
+        console.info(`Session ID: ${session.id}`);
+    });
 });
 ```
 
-## CryoServerWebsocketSession / Overview
+## CAMPServerWebsocketSession / Overview
 
 ### Data Events
 
@@ -164,65 +168,105 @@ This sad category of events is emitted when something about the session changes
 
 ### Public methods
 
-| Name             | Parameter                                        | Description                                                       | Returns               |
-|------------------|--------------------------------------------------|-------------------------------------------------------------------|-----------------------|
-| SendPing         |                                                  | Sends a ping to the client session                                |                       |
-| SendUTF8         | data: string                                     | Sends the passed utf8 text to the client session                  |                       |
-| SendBinary       | data: Buffer                                     | Sends the passed buffer to the client session                     |                       |
-| Stream           | source: ReadableStream, name?: string            | Streams a Readable to the server                                  |                       |
-| WaitForStream    | streamName?: string , timeout?: number           | Waits for a named stream                                          | Promise<CryoReadable> |
-| StreamFetchRange | stream: CryoReadable, start: number, end: number | Fetches chunk start-end of a given stream                         |                       |
-| Set              | key: string, value: any                          | Sets `key` to `value` in the session's custom data store          |                       |
-| Get              | key: string                                      | Retrieves the value of `key` from the session's custom data store | any                   |
-| Close            | reason: string                                   | Closes the session gracefully                                     |                       |
-| Destroy          |                                                  | Closes and destroys the session object                            |                       |
+| Name    | Parameter               | Description                                                       | Returns |
+|---------|-------------------------|-------------------------------------------------------------------|---------|
+| Set     | key: string, value: any | Sets `key` to `value` in the session's custom data store          |         |
+| Get     | key: string             | Retrieves the value of `key` from the session's custom data store | any     |
+| Close   | reason: string          | Closes the session gracefully                                     |         |
+| Destroy |                         | Closes and destroys the session object                            |         |
 
-## Cryo-Server / Extension interface
+CAMP-Functionality is divided among namespaces as defined in ``CAMP``.
 
-The extension interface allows you to modify the behaviour of the cryo server's message lifecycle, **before sending**
+#### Base
+
+Accessible via ``session.base.<method>(...);``
+
+| Name       | Parameter       | Description                              | Returns |
+|------------|-----------------|------------------------------------------|---------|
+| Ping       |                 | Pings the client                         |         |
+| SendUTF8   | data: string    | Sends the passed utf8 text to the client |         |
+| SendBinary | data: Buffer    | Sends the passed buffer to the client    |         |
+| SendError  | message: string | Send an error to the client              |         |
+
+#### Transaction
+
+Accessible via ``session.transaction.<method>(...);``
+
+| Name               | Parameter                                                                         | Description                                                 | Returns                 |
+|--------------------|-----------------------------------------------------------------------------------|-------------------------------------------------------------|-------------------------|
+| Stream             | source: Readable, options: { streamName: string, behaviour: CAMP_FLOW_BEHAVIOUR } | Streams a readable to the client                            |                         |
+| WaitForStream      | name: string, timeout: number                                                     | Waits for a named stream from client                        | Promise\<CAMPReadable\> |
+| StreamRequestRange | stream: CAMPReadable, start: bigint, end: bigint                                  | When in TX_PULL-mode, requests a byte range from the client |                         |
+
+## CAMP-Server / Extension interface
+
+The extension interface allows you to modify the behaviour of the CAMP server's message lifecycle, **before sending**
 and **after receiving** per session.
 
 Extensions can inspect and modify messages, enabling you to do custom behaviour, such as logging, filtering, building
 metrics or transforming the payloads.
 
-Extensions are registered using the cryo-server's ``RegisterExtension``-method.
+Extensions are registered using the CAMP-server's ``RegisterExtension``-method.
 
 ### Interface definition
 
 ````typescript
 type Box<T> = { value: T };
 
-export interface ICryoExtension {
+export declare interface ICAMPExtension {
+    /**
+     * Executed upon registration of the extension on the server
+     * @param server - Reference to the running CAMP websocket server
+     * */
+    on_register(server: CAMPWebsocketServer): void;
+
+    /**
+     * Executed upon unregistration of the extension on the server
+     * @param server - Reference to the running CAMP websocket server
+     * */
+    on_unregister(server: CAMPWebsocketServer): void;
 
     /**
      * Executed before a binary message is sent to the client session
-     * @param session - The cryo websocket session
+     * @param session - The CAMP websocket session
      * @param outgoing_message - The message buffer to be sent to the client
      * */
-    before_send_binary?(session: CryoServerWebsocketSession, outgoing_message: Box<Buffer>): Promise<boolean>;
+    before_send_binary?(session: CAMPServerWebsocketSession, outgoing_message: Box<Buffer>): Promise<boolean>;
 
     /**
      * Executed before a text message is sent to the client session
-     * @param session - The cryo websocket session
+     * @param session - The CAMP websocket session
      * @param outgoing_message - The message text to be sent to the client
      * */
-    before_send_utf8?(session: CryoServerWebsocketSession, outgoing_message: Box<string>): Promise<boolean>;
+    before_send_utf8?(session: CAMPServerWebsocketSession, outgoing_message: Box<string>): Promise<boolean>;
+
+    /**
+     * Executed before an error message is sent to the client session
+     * @param session - The CAMP websocket session
+     * @param outgoing_message - The error message to be sent to the client
+     * */
+    before_send_error?(session: CAMPServerWebsocketSession, outgoing_message: Box<string>): Promise<boolean>;
 
     /**
      * Executed after a binary message is received from the client, but before the session can emit the `message-binary` event
-     * Return false to stop event propagation, or true to continue event propagation
-     * @param session - The cryo websocket session
+     * @param session - The CAMP websocket session
      * @param incoming_message - The incoming binary message from the client
      * */
-    on_receive_binary?(session: CryoServerWebsocketSession, incoming_message: Box<Buffer>): Promise<boolean>;
+    on_receive_binary?(session: CAMPServerWebsocketSession, incoming_message: Box<Buffer>): Promise<boolean>;
 
     /**
      * Executed after a text message is received from the client, but before the session can emit the `message-utf8` event
-     * Return false to stop event propagation, or true to continue event propagation
-     * @param session - The cryo websocket session
+     * @param session - The CAMP websocket session
      * @param incoming_message - The incoming text message from the client
      * */
-    on_receive_utf8?(session: CryoServerWebsocketSession, incoming_message: Box<string>): Promise<boolean>;
+    on_receive_utf8?(session: CAMPServerWebsocketSession, incoming_message: Box<string>): Promise<boolean>;
+
+    /**
+     * Executed after an error message is received from the client, but before the session can emit the `message-error` event
+     * @param session - The CAMP websocket session
+     * @param incoming_message - The incoming error message from the client
+     * */
+    on_receive_error?(session: CAMPServerWebsocketSession, incoming_message: Box<string>): Promise<boolean>;
 
     /**
      * The unique name of this extension
@@ -231,80 +275,33 @@ export interface ICryoExtension {
 }
 ````
 
-### Diagram
-
-```
-             ┌──────────────────────────┐
-             │  Outgoing message starts │
-             └────────────┬─────────────┘
-                          │
-                          ▼
-           +--------------------------------+
-           | before_send_utf8 / binary hooks |
-           +--------------------------------+
-                          │
-                 (Extensions could:)
-                 - inspect message
-                 - modify message (via Box<T>)
-                 - return false to drop it
-                          │
-                          ▼
-               ┌───────────────────────┐
-               │   Message is sent     │
-               └─────────┬─────────────┘
-                         │
-                         ▼
-         [Network transmission to client]
-
-
-
-         [Incoming message from client]
-                         │
-                         ▼
-           +--------------------------------+
-           | on_receive_utf8 / binary hooks  |
-           +--------------------------------+
-                          │
-                 (Extensions could:)
-                 - inspect message
-                 - modify message (via Box<T>)
-                 - return false to suppress emit
-                          │
-                          ▼
-             ┌──────────────────────────┐
-             │  message-* event emitted │
-             │ (to user application)    │
-             └──────────────────────────┘
-
-```
-
 ### Example extension
 
 This is an exemplary logging extension. It simply logs each incoming and outgoing message
 
 ```typescript
-import {Box, ICryoExtension} from "./CAMPServerExtension";
-import {CryoServerWebsocketSession} from "./CAMPServerWebsocketSession";
+import {Box, ICAMPExtension} from "./CAMPServerExtension";
+import {CAMPServerWebsocketSession} from "./CAMPServerWebsocketSession";
 
-class LoggerExtension implements ICryoExtension {
+class LoggerExtension implements ICAMPExtension {
     public name = "unique_name_for_logger";
 
-    public async before_send_utf8(session: CryoServerWebsocketSession, outgoing_message: Box<string>) {
+    public async before_send_utf8(session: CAMPServerWebsocketSession, outgoing_message: Box<string>) {
         console.log(`Outgoing UTF-8 message: "${outgoing_message.value}"`);
         return true;
     }
 
-    public async before_send_binary(session: CryoServerWebsocketSession, outgoing_message: Box<Buffer>) {
+    public async before_send_binary(session: CAMPServerWebsocketSession, outgoing_message: Box<Buffer>) {
         console.log(`Outgoing binary message: "${outgoing_message.value.toString(16)}"`);
         return true;
     }
 
-    public async on_receive_utf8(session: CryoServerWebsocketSession, incoming_message: Box<string>) {
+    public async on_receive_utf8(session: CAMPServerWebsocketSession, incoming_message: Box<string>) {
         console.log(`Incoming UTF-8 message: "${outgoing_message.value}"`);
         return true;
     }
 
-    public async before_send_utf8(session: CryoServerWebsocketSession, incoming_message: Box<Buffer>) {
+    public async before_send_utf8(session: CAMPServerWebsocketSession, incoming_message: Box<Buffer>) {
         console.log(`Incoming binary message: "${outgoing_message.value.toString(16)}"`);
         return true;
     }

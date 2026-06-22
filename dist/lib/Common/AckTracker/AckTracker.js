@@ -1,12 +1,12 @@
 import { CreateDebugLogger } from "../Util/CreateDebugLogger.js";
-import { CryoFrameInspector } from "../CryoFrameInspector/CryoFrameInspector.js";
+import { CAMPFrameInspector } from "../CAMPFrameInspector/CAMPFrameInspector.js";
 export class AckTracker {
     MAX_STATE_DURATION_MS;
     log;
     pending = new Map();
     ewma_rtt = null;
     alpha = 0.2;
-    constructor(MAX_STATE_DURATION_MS = 2500, log = CreateDebugLogger("CRYO_SERVER_ACK")) {
+    constructor(MAX_STATE_DURATION_MS = 2500, log = CreateDebugLogger("CAMP_SERVER_ACK")) {
         this.MAX_STATE_DURATION_MS = MAX_STATE_DURATION_MS;
         this.log = log;
     }
@@ -34,7 +34,7 @@ export class AckTracker {
         for (const [ack, pending] of this.pending.entries()) {
             if ((now - pending.timestamp) >= this.MAX_STATE_DURATION_MS) {
                 this.pending.delete(ack);
-                this.log(`Purged message ${CryoFrameInspector.Inspect(pending.message)} (ACK ${ack}) due to being stale for longer than ${this.MAX_STATE_DURATION_MS} milliseconds!`);
+                this.log(`Purged message ${CAMPFrameInspector.Inspect(pending.message)} (ACK ${ack}) due to being stale for longer than ${this.MAX_STATE_DURATION_MS} milliseconds!`);
                 purged++;
             }
         }

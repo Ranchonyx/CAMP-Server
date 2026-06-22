@@ -1,10 +1,6 @@
 import type {EventEmitter} from "node:events";
 import type http from "node:http";
 import type {Readable} from "node:stream";
-import {CAMPBaseManager} from "../../src/CAMPServerWebsocketSession/Namespaces/CAMP.Base.ts";
-import {CAMPTransactionManager} from "../../src/CAMPServerWebsocketSession/Namespaces/CAMP.Transaction.ts";
-import {CAMPExtensionExecutor} from "../../src/CAMPExtension/CAMPExtensionRegistry";
-import {AckTracker} from "../../src/Common/AckTracker/AckTracker.ts";
 import {CAMP_FLOW_BEHAVIOUR} from "camp-protocol";
 
 export type CAMPReadable = Readable & { txId: number };
@@ -79,13 +75,7 @@ export declare class CAMPTransactionManager {
      * @param start The starting index of chunks to be requested
      * @param end The ending index of chunks to be requested
      * */
-    public StreamRequestRange(stream: CAMPReadable, start: number, end: number): Promise<void>;
-
-    /**
-     * Sets the flow control for this session
-     * @param behaviour The flow control behaviour to set the client to
-     * */
-    public SetIncomingFlowControl(behaviour: CAMP_FLOW_BEHAVIOUR): Promise<void>;
+    public StreamRequestRange(stream: CAMPReadable, start: bigint, end: bigint): Promise<void>;
 }
 
 export declare class CAMPServerWebsocketSession<TStorageKeys extends string = string> extends EventEmitter implements CAMPServerWebsocketSession<TStorageKeys> {
@@ -104,7 +94,6 @@ export declare class CAMPServerWebsocketSession<TStorageKeys extends string = st
 type Box<T> = { value: T };
 
 export declare interface ICAMPExtension {
-
     /**
      * Executed upon registration of the extension on the server
      * @param server - Reference to the running CAMP websocket server
