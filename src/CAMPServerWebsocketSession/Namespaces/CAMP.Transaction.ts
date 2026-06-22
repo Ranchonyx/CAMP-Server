@@ -58,9 +58,10 @@ export class CAMPTransactionManager extends EventEmitter implements CAMPTransact
      * */
     public async Stream(source: Readable, options: {
         streamName: string,
-        behaviour: CAMP_FLOW_BEHAVIOUR
-    } = {streamName: "anonymous", behaviour: CAMP_FLOW_BEHAVIOUR.TX_PUSH}) {
-        if (options.behaviour === CAMP_FLOW_BEHAVIOUR.TX_PUSH)
+        behaviour: "pull" | "push"
+    } = {streamName: "anonymous", behaviour: "push"}) {
+        const bhv = options.behaviour === "pull" ? CAMP_FLOW_BEHAVIOUR.TX_PULL : CAMP_FLOW_BEHAVIOUR.TX_PUSH;
+        if (bhv === CAMP_FLOW_BEHAVIOUR.TX_PUSH)
             return this.StreamPush(source, options.streamName);
         return this.StreamPull(source, options.streamName);
     }

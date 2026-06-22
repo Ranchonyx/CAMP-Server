@@ -30,7 +30,7 @@ export class CAMPTransactionManager extends EventEmitter {
     /**
      * Stream a readable to the client
      * @param source The {@link Readable} object to be streamed
-     * @param streamName Optionally, the name of the stream
+     * @param options The options for streaming the readable
      * */
     async Stream(source, options = { streamName: "anonymous", behaviour: CAMP_FLOW_BEHAVIOUR.TX_PUSH }) {
         if (options.behaviour === CAMP_FLOW_BEHAVIOUR.TX_PUSH)
