@@ -4,25 +4,24 @@ import ws from "ws";
 import {Duplex} from "node:stream";
 import {CreateDebugLogger} from "../Common/Util/CreateDebugLogger.js";
 import {AckTracker} from "../Common/AckTracker/AckTracker.js";
-import {CryoExtensionRegistry} from "../CryoExtension/CryoExtensionRegistry.js";
+import {CAMPServerExtensionRegistry} from "../CAMPWebsocketServer/CAMPServerExtensionRegistry.js";
 import {
     BackpressureManager,
     BackpressureOpts,
     BackpressureProfile
-} from "../BackpressureManager/BackpressureManager.js";
+} from "./BackpressureManager.js";
 import {
-    BinaryMessageType,
+    CAMPFrameType,
     BufferUtil,
     ByeFrame,
     EndpointInfoFrame,
-} from "cryo-protocol";
-import {CryoBaseManager} from "./Namespaces/Cryo.Base.js";
-import {CryoTransactionManager} from "./Namespaces/Cryo.Transaction.js";
-import {CryoFrameInspector} from "../Common/CryoFrameInspector/CryoFrameInspector.js";
-import {CryoWebsocketServerEvents} from "../CryoWebsocketServer/CryoWebsocketServer.js";
+} from "camp-protocol";
+import {CAMPBaseManager} from "./Namespaces/CAMP.Base.js";
+import {CAMPTransactionManager} from "./Namespaces/CAMP.Transaction.js";
+import {CAMPFrameInspector} from "../Common/CAMPFrameInspector/CAMPFrameInspector.js";
 
 
-export interface ICryoServerWebsocketSessionEvents {
+export interface ICAMPServerWebsocketSessionEvents {
     "message-utf8": (message: string) => Promise<void>;
     "message-binary": (message: Buffer) => Promise<void>;
     "message-error": (message: string) => Promise<void>;
@@ -36,10 +35,10 @@ export interface ICryoServerWebsocketSessionEvents {
     "closed": () => void;
 }
 
-export interface CryoServerWebsocketSession<TStorageKeys extends string = string> {
-    on<U extends keyof ICryoServerWebsocketSessionEvents>(event: U, listener: ICryoServerWebsocketSessionEvents[U]): this;
+export interface CAMPServerWebsocketSession<TStorageKeys extends string = string> {
+    on<U extends keyof ICAMPServerWebsocketSessionEvents>(event: U, listener: ICAMPServerWebsocketSessionEvents[U]): this;
 
-    emit<U extends keyof ICryoServerWebsocketSessionEvents>(event: U, ...args: Parameters<ICryoServerWebsocketSessionEvents[U]>): boolean;
+    emit<U extends keyof ICAMPServerWebsocketSessionEvents>(event: U, ...args: Parameters<ICAMPServerWebsocketSessionEvents[U]>): boolean;
 }
 
 enum CloseCode {
@@ -50,7 +49,7 @@ enum CloseCode {
 
 type SocketType = Duplex & { isAlive: boolean, sessionId: bigint };
 
-export class CryoServerWebsocketSession<TStorageKeys extends string = string> extends EventEmitter implements CryoServerWebsocketSession<TStorageKeys> {
+export class CAMPServerWebsocketSession<TStorageKeys extends string = string> extends EventEmitter implements CAMPServerWebsocketSession<TStorageKeys> {
     private readonly bp_mgr: BackpressureManager;
     private readonly log: DebugLoggerFunction;
     private readonly client_ack_tracker: AckTracker = new AckTracker();
@@ -65,14 +64,14 @@ export class CryoServerWebsocketSession<TStorageKeys extends string = string> ex
 
     private receivedProtocolFeatures: bigint = 0n;
 
-    public base: CryoBaseManager;
-    public stream: CryoTransactionManager | null = null;
+    public base: CAMPBaseManager;
+    public stream: CAMPTransactionManager | null = null;
 
     private bind<T extends Function>(func: T): T {
         return func.bind(this);
     }
 
-    private forwardMessageStrOrBuf(source: EventEmitter, event: keyof ICryoServerWebsocketSessionEvents) {
+    private forwardMessageStrOrBuf(source: EventEmitter, event: keyof ICAMPServerWebsocketSessionEvents) {
         source.on(event, (message) => this.emit(event, message));
     }
 
@@ -80,13 +79,13 @@ export class CryoServerWebsocketSession<TStorageKeys extends string = string> ex
                        private tcpSocket: Duplex,
                        private remoteName: string,
                        backpressure_opts: Required<BackpressureOpts> | BackpressureProfile,
-                       private extensionRegistry: CryoExtensionRegistry
+                       private extensionRegistry: CAMPServerExtensionRegistry
     ) {
         super();
-        this.log = CreateDebugLogger(`CRYO_SERVER_SESSION`);
+        this.log = CreateDebugLogger(`CAMP_SERVER_SESSION`);
 
-        this.bp_mgr = new BackpressureManager(webSocket, backpressure_opts, CreateDebugLogger(`CRYO_BACKPRESSURE`));
-        this.base = new CryoBaseManager(
+        this.bp_mgr = new BackpressureManager(webSocket, backpressure_opts, CreateDebugLogger(`CAMP_BACKPRESSURE`));
+        this.base = new CAMPBaseManager(
             this.sid,
             this.bind(this.send),
             this.bind(this.next_ack),
@@ -116,7 +115,7 @@ export class CryoServerWebsocketSession<TStorageKeys extends string = string> ex
 
         //Handler first
         this.base.on("ready", () => {
-            this.stream = new CryoTransactionManager(
+            this.stream = new CAMPTransactionManager(
                 this.sid,
                 this.bind(this.send),
                 this.bind(this.next_ack),
@@ -137,10 +136,10 @@ export class CryoServerWebsocketSession<TStorageKeys extends string = string> ex
     private async routeFrame(frame: Buffer) {
         const type = BufferUtil.GetType(frame);
 
-        if (type >= BinaryMessageType.BINARYDATA && type <= BinaryMessageType.ENDPOINT_INFO)
+        if (type >= CAMPFrameType.BINARYDATA && type <= CAMPFrameType.ENDPOINT_INFO)
             return this.base.handle(frame);
 
-        if (type >= BinaryMessageType.TX_START && type <= BinaryMessageType.TX_CANCEL)
+        if (type >= CAMPFrameType.TX_START && type <= CAMPFrameType.TX_CANCEL)
             return this.stream?.handle(frame);
 
         throw new Error(`Unknown frame type ${type}!`);
@@ -182,14 +181,13 @@ export class CryoServerWebsocketSession<TStorageKeys extends string = string> ex
         //Create a pending message with a new ack number and queue it for acknowledgement by the client
         const type = BufferUtil.GetType(outgoing_message);
         if (
-            type === BinaryMessageType.UTF8DATA ||
-            type === BinaryMessageType.BINARYDATA ||
-            type === BinaryMessageType.ERROR ||
-            type === BinaryMessageType.ENDPOINT_INFO ||
-            type === BinaryMessageType.TX_FLOW ||
-            type === BinaryMessageType.TX_START ||
-            type === BinaryMessageType.TX_FINISH ||
-            type === BinaryMessageType.TX_FETCH
+            type === CAMPFrameType.UTF8DATA ||
+            type === CAMPFrameType.BINARYDATA ||
+            type === CAMPFrameType.ERROR ||
+            type === CAMPFrameType.ENDPOINT_INFO ||
+            type === CAMPFrameType.TX_START ||
+            type === CAMPFrameType.TX_FINISH ||
+            type === CAMPFrameType.TX_FETCH
         ) {
             const message_ack = BufferUtil.GetAck(outgoing_message);
             ackPromise = Promise.withResolvers<void>();
@@ -201,7 +199,7 @@ export class CryoServerWebsocketSession<TStorageKeys extends string = string> ex
             });
         }
 
-        this.log(`OUT ${CryoFrameInspector.Inspect(outgoing_message)}`);
+        this.log(`OUT ${CAMPFrameInspector.Inspect(outgoing_message)}`);
 
         //Spin until we can send again
         while (true) {

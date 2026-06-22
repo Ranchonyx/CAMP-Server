@@ -116,7 +116,7 @@ const server = await cryo({
 The cryo server emits events as described by the CryoWebsocketServerEvents interface
 
 interface CryoWebsocketServerEvents {
-  "session": (session: CryoServerWebsocketSession) => void;
+  "session": (session: CAMPServerWebsocketSession) => void;
 
   "listening": () => void;
 }
@@ -283,8 +283,8 @@ export interface ICryoExtension {
 This is an exemplary logging extension. It simply logs each incoming and outgoing message
 
 ```typescript
-import {Box, ICryoExtension} from "./CryoExtension";
-import {CryoServerWebsocketSession} from "./CryoServerWebsocketSession";
+import {Box, ICryoExtension} from "./CAMPServerExtension";
+import {CryoServerWebsocketSession} from "./CAMPServerWebsocketSession";
 
 class LoggerExtension implements ICryoExtension {
     public name = "unique_name_for_logger";

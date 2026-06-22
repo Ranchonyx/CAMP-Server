@@ -1,18 +1,18 @@
 import type {EventEmitter} from "node:events";
 import type http from "node:http";
 import type {Readable} from "node:stream";
-import {CRYO_FLOW_BEHAVIOUR} from "cryo-protocol";
-import {CryoBaseManager} from "../../src/CryoServerWebsocketSession/Namespaces/Cryo.Base";
-import {CryoTransactionManager} from "../../src/CryoServerWebsocketSession/Namespaces/Cryo.Transaction";
-import {CryoExtensionExecutor} from "../../src/CryoExtension/CryoExtensionRegistry";
-import {AckTracker} from "../../src/Common/AckTracker/AckTracker";
+import {CAMPBaseManager} from "../../src/CAMPServerWebsocketSession/Namespaces/CAMP.Base.ts";
+import {CAMPTransactionManager} from "../../src/CAMPServerWebsocketSession/Namespaces/CAMP.Transaction.ts";
+import {CAMPExtensionExecutor} from "../../src/CAMPExtension/CAMPExtensionRegistry";
+import {AckTracker} from "../../src/Common/AckTracker/AckTracker.ts";
+import {CAMP_FLOW_BEHAVIOUR} from "camp-protocol";
 
-export type CryoReadable = Readable & { txId: number };
+export type CAMPReadable = Readable & { txId: number };
 
 /**
- * CryoServerWebsocketSession typings
+ * CAMPServerWebsocketSession typings
  * */
-export declare interface ICryoServerWebsocketSessionEvents {
+export declare interface ICAMPServerWebsocketSessionEvents {
     "message-utf8": (message: string) => Promise<void>;
     "message-binary": (message: Buffer) => Promise<void>;
     "message-error": (message: string) => Promise<void>;
@@ -26,17 +26,17 @@ export declare interface ICryoServerWebsocketSessionEvents {
     "closed": () => void;
 }
 
-export declare type CryoWebsocketSessionDefaultMetadata = {
+export declare type CAMPWebsocketSessionDefaultMetadata = {
     sid: bigint;
 }
 
-export declare interface CryoServerWebsocketSession<TStorageKeys extends string = string> {
-    on<U extends keyof ICryoServerWebsocketSessionEvents>(event: U, listener: ICryoServerWebsocketSessionEvents[U]): this;
+export declare interface CAMPServerWebsocketSession<TStorageKeys extends string = string> {
+    on<U extends keyof ICAMPServerWebsocketSessionEvents>(event: U, listener: ICAMPServerWebsocketSessionEvents[U]): this;
 
-    emit<U extends keyof ICryoServerWebsocketSessionEvents>(event: U, ...args: Parameters<ICryoServerWebsocketSessionEvents[U]>): boolean;
+    emit<U extends keyof ICAMPServerWebsocketSessionEvents>(event: U, ...args: Parameters<ICAMPServerWebsocketSessionEvents[U]>): boolean;
 }
 
-export declare class CryoBaseManager {
+export declare class CAMPBaseManager {
     /**
      * Send a ping to the client
      * */
@@ -58,20 +58,20 @@ export declare class CryoBaseManager {
     public SendError(message: string): Promise<void>;
 }
 
-export declare class CryoTransactionManager {
+export declare class CAMPTransactionManager {
     /**
      * Stream a readable to the client
      * @param source The {@link Readable} object to be streamed
      * @param streamName Optionally, the name of the stream
      * */
-    public Stream(source: Readable, streamName?: string): Promise<void>;
+    public Stream(source: Readable, options: { streamName: string, behaviour: CAMP_FLOW_BEHAVIOUR }): Promise<void>;
 
     /**
      * Wait for an incoming stream
      * @param streamName The name of the stream to wait for - leave empty to wait for an unnamed stream
      * @param timeout The amount of milliseconds to wait until the operation should be cancelled if no matching stream was received
      * */
-    public WaitForStream(streamName?: string, timeout?: number): Promise<CryoReadable>;
+    public WaitForStream(streamName?: string, timeout?: number): Promise<CAMPReadable>;
 
     /**
      * Request a range of chunks from the stream - used when flow control = TX_PULL
@@ -79,18 +79,18 @@ export declare class CryoTransactionManager {
      * @param start The starting index of chunks to be requested
      * @param end The ending index of chunks to be requested
      * */
-    public StreamRequestRange(stream: CryoReadable, start: number, end: number): Promise<void>;
+    public StreamRequestRange(stream: CAMPReadable, start: number, end: number): Promise<void>;
 
     /**
      * Sets the flow control for this session
      * @param behaviour The flow control behaviour to set the client to
      * */
-    public SetIncomingFlowControl(behaviour: CRYO_FLOW_BEHAVIOUR): Promise<void>;
+    public SetIncomingFlowControl(behaviour: CAMP_FLOW_BEHAVIOUR): Promise<void>;
 }
 
-export declare class CryoServerWebsocketSession<TStorageKeys extends string = string> extends EventEmitter implements CryoServerWebsocketSession<TStorageKeys> {
-    public base: CryoBaseManager;
-    public stream: CryoTransactionManager;
+export declare class CAMPServerWebsocketSession<TStorageKeys extends string = string> extends EventEmitter implements CAMPServerWebsocketSession<TStorageKeys> {
+    public base: CAMPBaseManager;
+    public stream: CAMPTransactionManager;
 
     public Close(reason: string): Promise<void>;
 
@@ -103,61 +103,61 @@ export declare class CryoServerWebsocketSession<TStorageKeys extends string = st
 
 type Box<T> = { value: T };
 
-export declare interface ICryoExtension {
+export declare interface ICAMPExtension {
 
     /**
      * Executed upon registration of the extension on the server
-     * @param server - Reference to the running cryo websocket server
+     * @param server - Reference to the running CAMP websocket server
      * */
-    on_register(server: CryoWebsocketServer): void;
+    on_register(server: CAMPWebsocketServer): void;
 
     /**
      * Executed upon unregistration of the extension on the server
-     * @param server - Reference to the running cryo websocket server
+     * @param server - Reference to the running CAMP websocket server
      * */
-    on_unregister(server: CryoWebsocketServer): void;
+    on_unregister(server: CAMPWebsocketServer): void;
 
     /**
      * Executed before a binary message is sent to the client session
-     * @param session - The cryo websocket session
+     * @param session - The CAMP websocket session
      * @param outgoing_message - The message buffer to be sent to the client
      * */
-    before_send_binary?(session: CryoServerWebsocketSession, outgoing_message: Box<Buffer>): Promise<boolean>;
+    before_send_binary?(session: CAMPServerWebsocketSession, outgoing_message: Box<Buffer>): Promise<boolean>;
 
     /**
      * Executed before a text message is sent to the client session
-     * @param session - The cryo websocket session
+     * @param session - The CAMP websocket session
      * @param outgoing_message - The message text to be sent to the client
      * */
-    before_send_utf8?(session: CryoServerWebsocketSession, outgoing_message: Box<string>): Promise<boolean>;
+    before_send_utf8?(session: CAMPServerWebsocketSession, outgoing_message: Box<string>): Promise<boolean>;
 
     /**
      * Executed before an error message is sent to the client session
-     * @param session - The cryo websocket session
+     * @param session - The CAMP websocket session
      * @param outgoing_message - The error message to be sent to the client
      * */
-    before_send_error?(session: CryoServerWebsocketSession, outgoing_message: Box<string>): Promise<boolean>;
+    before_send_error?(session: CAMPServerWebsocketSession, outgoing_message: Box<string>): Promise<boolean>;
 
     /**
      * Executed after a binary message is received from the client, but before the session can emit the `message-binary` event
-     * @param session - The cryo websocket session
+     * @param session - The CAMP websocket session
      * @param incoming_message - The incoming binary message from the client
      * */
-    on_receive_binary?(session: CryoServerWebsocketSession, incoming_message: Box<Buffer>): Promise<boolean>;
+    on_receive_binary?(session: CAMPServerWebsocketSession, incoming_message: Box<Buffer>): Promise<boolean>;
 
     /**
      * Executed after a text message is received from the client, but before the session can emit the `message-utf8` event
-     * @param session - The cryo websocket session
+     * @param session - The CAMP websocket session
      * @param incoming_message - The incoming text message from the client
      * */
-    on_receive_utf8?(session: CryoServerWebsocketSession, incoming_message: Box<string>): Promise<boolean>;
+    on_receive_utf8?(session: CAMPServerWebsocketSession, incoming_message: Box<string>): Promise<boolean>;
 
     /**
      * Executed after an error message is received from the client, but before the session can emit the `message-error` event
-     * @param session - The cryo websocket session
+     * @param session - The CAMP websocket session
      * @param incoming_message - The incoming error message from the client
      * */
-    on_receive_error?(session: CryoServerWebsocketSession, incoming_message: Box<string>): Promise<boolean>;
+    on_receive_error?(session: CAMPServerWebsocketSession, incoming_message: Box<string>): Promise<boolean>;
 
     /**
      * The unique name of this extension
@@ -166,7 +166,7 @@ export declare interface ICryoExtension {
 }
 
 /**
- * CryoWebsocketServer typings
+ * CAMPWebsocketServer typings
  * */
 export declare interface ITokenValidator {
     validate(token: string): Promise<boolean>;
@@ -196,42 +196,42 @@ export interface SSLOptions {
  * */
 export type BackpressureProfile = "optimize_latency" | "optimize_memory" | "default";
 
-export interface ICryoWebsocketServerOptions {
+export interface ICAMPWebsocketServerOptions {
     keepAliveIntervalMs?: number;
     port?: number;
     backpressure?: BackpressureProfile | BackpressureOpts;
     ssl?: SSLOptions;
 }
 
-export declare interface CryoWebsocketServerEvents {
-    "session": (session: CryoServerWebsocketSession) => void;
+export declare interface CAMPWebsocketServerEvents {
+    "session": (session: CAMPServerWebsocketSession) => void;
 
     "listening": () => void;
 }
 
-export declare interface CryoWebsocketServer {
-    on<U extends keyof CryoWebsocketServerEvents>(event: U, listener: CryoWebsocketServerEvents[U]): this;
+export declare interface CAMPWebsocketServer {
+    on<U extends keyof CAMPWebsocketServerEvents>(event: U, listener: CAMPWebsocketServerEvents[U]): this;
 
-    emit<U extends keyof CryoWebsocketServerEvents>(event: U, ...args: Parameters<CryoWebsocketServerEvents[U]>): boolean;
+    emit<U extends keyof CAMPWebsocketServerEvents>(event: U, ...args: Parameters<CAMPWebsocketServerEvents[U]>): boolean;
 }
 
-export declare class CryoWebsocketServer extends EventEmitter implements CryoWebsocketServer {
+export declare class CAMPWebsocketServer extends EventEmitter implements CAMPWebsocketServer {
     public Destroy(): void;
 
-    public RegisterExtension(extension: ICryoExtension): void;
+    public RegisterExtension(extension: ICAMPExtension): void;
 
-    public UnregisterExtension(extension: ICryoExtension): void;
+    public UnregisterExtension(extension: ICAMPExtension): void;
 
-    public GetExtension(extensionName: string): ICryoExtension | null;
+    public GetExtension(extensionName: string): ICAMPExtension | null;
 
-    public ConnectPeer(host: string, bearer: string): Promise<CryoServerWebsocketSession>;
+    public ConnectPeer(host: string, bearer: string): Promise<CAMPServerWebsocketSession>;
 
     public get http_server(): http.Server;
 }
 
 /**
- * Create a Cryo server
+ * Create a CAMP server
  * @param pTokenValidator - An implementation of the {@link ITokenValidator} interface to validate incoming websocket connections
- * @param options - Optional arguments, {@link CryoWebsocketServerOptions}
+ * @param options - Optional arguments, {@link CAMPWebsocketServerOptions}
  * */
-export declare function cryo(pTokenValidator: ITokenValidator, options?: ICryoWebsocketServerOptions): CryoWebsocketServer;
+export declare function camp(pTokenValidator: ITokenValidator, options?: ICAMPWebsocketServerOptions): CAMPWebsocketServer;

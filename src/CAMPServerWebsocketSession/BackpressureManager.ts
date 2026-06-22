@@ -3,7 +3,7 @@ import {clearInterval} from "node:timers";
 import Guard from "../Common/Util/Guard.js";
 import type {Socket} from "node:net";
 import type {DebugLoggerFunction} from "node:util";
-import {BufferUtil, BinaryMessageType} from "cryo-protocol"
+import {BufferUtil, CAMPFrameType} from "camp-protocol"
 
 export type DropPolicy = "drop-oldest" | "drop-newest" | "dedupe-latest";
 
@@ -139,7 +139,7 @@ export class BackpressureManager {
 
         //Transaction frames form an ordered stream, may never be dropped or reordered
         //because that will corrupt the stream
-        const isTransactionFrame = type === BinaryMessageType.TX_START || type === BinaryMessageType.TX_CHUNK || type === BinaryMessageType.TX_FINISH;
+        const isTransactionFrame = type === CAMPFrameType.TX_START || type === CAMPFrameType.TX_CHUNK || type === CAMPFrameType.TX_FINISH;
         if (DROP_POLICY === "dedupe-latest" && key && !isTransactionFrame) {
             for (let i = this.queue.length - 1; i >= 0; i--) {
                 const item = this.queue[i];
@@ -162,13 +162,15 @@ export class BackpressureManager {
                 if (this.queue.length > 0) {
                     const victimIndex = this.queue.findIndex(item => {
                         const itemType = BufferUtil.GetType(item.buffer);
-                        return itemType !== BinaryMessageType.TX_START &&
-                            itemType !== BinaryMessageType.TX_CHUNK &&
-                            itemType !== BinaryMessageType.TX_FINISH;
+                        return itemType !== CAMPFrameType.TX_START &&
+                            itemType !== CAMPFrameType.TX_CHUNK &&
+                            itemType !== CAMPFrameType.TX_FINISH;
                     });
+
                     if (victimIndex === -1) {
                         return false;
                     }
+
                     const evicted_item = this.queue.splice(victimIndex, 1)[0];
                     Guard.CastAssert(evicted_item, evicted_item !== undefined, "evicted_item was undefined!");
                     this.queued_bytes -= evicted_item.buffer.byteLength;
@@ -246,7 +248,7 @@ export class BackpressureManager {
                 this.queued_bytes -= item!.buffer.byteLength;
 
                 this.ws.send(item!.buffer, {binary: true}, (err) => {
-                    if(err)
+                    if (err)
                         this.log(`Error during websocket send() call`, err);
                 });
             }

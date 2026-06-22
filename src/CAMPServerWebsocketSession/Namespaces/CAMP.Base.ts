@@ -1,36 +1,36 @@
 import {
     ACKFrame, BinaryDataFrame,
-    BinaryMessageType,
+    CAMPFrameType,
     BufferUtil,
     ByeFrame,
-    CRYO_PROTOCOL_VERSION,
+    CAMP_PROTOCOL_VERSION,
     EndpointInfoFrame, ErrorFrame, PingPongFrame, Utf8DataFrame
-} from "cryo-protocol";
+} from "camp-protocol";
 import {EventEmitter} from "node:events";
-import {CryoExtensionExecutor} from "../../CryoExtension/CryoExtensionRegistry.js";
+import {CAMPExtensionExecutor} from "../../CAMPWebsocketServer/CAMPServerExtensionRegistry.js";
 import {AckTracker} from "../../Common/AckTracker/AckTracker.js";
 
-interface CryoBaseManagerEvents {
+interface CAMPBaseManagerEvents {
     "ready": () => void;
     "message-utf8": (message: string) => void;
     "message-binary": (message: Buffer) => void;
     "message-error": (message: string) => void;
 }
 
-export interface CryoBaseManager {
-    on<U extends keyof CryoBaseManagerEvents>(event: U, listener: CryoBaseManagerEvents[U]): this;
+export interface CAMPBaseManager {
+    on<U extends keyof CAMPBaseManagerEvents>(event: U, listener: CAMPBaseManagerEvents[U]): this;
 
-    emit<U extends keyof CryoBaseManagerEvents>(event: U, ...args: Parameters<CryoBaseManagerEvents[U]>): boolean;
+    emit<U extends keyof CAMPBaseManagerEvents>(event: U, ...args: Parameters<CAMPBaseManagerEvents[U]>): boolean;
 }
 
-export class CryoBaseManager extends EventEmitter implements CryoBaseManager {
+export class CAMPBaseManager extends EventEmitter implements CAMPBaseManager {
     public constructor(
         private sid: bigint,
         private send: (frame: Buffer, payload?: string | Buffer) => Promise<void>,
         private next_ack: () => number,
         private destroy: (code?: number, message?: string) => void,
         private set_features: (features: bigint) => void,
-        private extension_executor: CryoExtensionExecutor,
+        private extension_executor: CAMPExtensionExecutor,
         private client_ack_tracker: AckTracker,
         private set_session_alive: () => void
     ) {
@@ -42,7 +42,7 @@ export class CryoBaseManager extends EventEmitter implements CryoBaseManager {
      * */
     public async Ping(): Promise<void> {
         const encodedPingMessage = PingPongFrame
-            .Serialize(this.sid, this.next_ack(), "ping");
+            .Serialize(this.sid, "ping");
 
         await this.send(encodedPingMessage);
     }
@@ -103,25 +103,25 @@ export class CryoBaseManager extends EventEmitter implements CryoBaseManager {
         const type = BufferUtil.GetType(frame);
 
         switch (type) {
-            case BinaryMessageType.ENDPOINT_INFO:
+            case CAMPFrameType.ENDPOINT_INFO:
                 await this.HandleEndpointInfo(frame);
                 return;
-            case BinaryMessageType.BYE:
+            case CAMPFrameType.BYE:
                 await this.HandleBye(frame);
                 return;
-            case BinaryMessageType.ACK:
+            case CAMPFrameType.ACK:
                 await this.HandleAck(frame);
                 return;
-            case BinaryMessageType.ERROR:
+            case CAMPFrameType.ERROR:
                 await this.HandleError(frame);
                 return;
-            case BinaryMessageType.PING_PONG:
+            case CAMPFrameType.PING_PONG:
                 await this.HandlePingPong(frame);
                 return;
-            case BinaryMessageType.UTF8DATA:
+            case CAMPFrameType.UTF8DATA:
                 await this.HandleUtf8Data(frame);
                 return;
-            case BinaryMessageType.BINARYDATA:
+            case CAMPFrameType.BINARYDATA:
                 await this.HandleBinaryData(frame);
                 return;
         }
@@ -141,8 +141,8 @@ export class CryoBaseManager extends EventEmitter implements CryoBaseManager {
             .Deserialize(frame);
 
         //Check protocol version equality and fail otherwise
-        if (CRYO_PROTOCOL_VERSION !== decodedInfoMessage.version) {
-            this.destroy(4001, `Protocol mismatch. Client offered ${decodedInfoMessage.version}, we support ${CRYO_PROTOCOL_VERSION} !`);
+        if (CAMP_PROTOCOL_VERSION !== decodedInfoMessage.version) {
+            this.destroy(4001, `Protocol mismatch. Client offered ${decodedInfoMessage.version}, we support ${CAMP_PROTOCOL_VERSION} !`);
             return;
         }
 
@@ -158,7 +158,7 @@ export class CryoBaseManager extends EventEmitter implements CryoBaseManager {
 
         //A peer is pinging us, play nice and respond
         if (decodedPingPongMessage.payload === "ping") {
-            const outgoingPong = PingPongFrame.Serialize(this.sid, decodedPingPongMessage.ack, "pong");
+            const outgoingPong = PingPongFrame.Serialize(this.sid, "pong");
             await this.send(outgoingPong);
         } else {
             //A normal client responded to our ping

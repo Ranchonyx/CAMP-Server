@@ -1,17 +1,17 @@
-import {ICryoExtension} from "./CryoExtension.js";
-import {CryoServerWebsocketSession} from "../CryoServerWebsocketSession/CryoServerWebsocketSession.js";
+import {ICAMPExtension} from "./CAMPServerExtension.js";
+import {CAMPServerWebsocketSession} from "../CAMPServerWebsocketSession/CAMPServerWebsocketSession.js";
 import {CreateDebugLogger} from "../Common/Util/CreateDebugLogger.js";
 
 type Box<T> = { value: T }
 
 type ExtensionFunctionResult = { should_emit: boolean, error?: unknown };
-const log = CreateDebugLogger("CRYO_EXTENSION");
+const log = CreateDebugLogger("CAMP_EXTENSION");
 
-export class CryoExtensionExecutor {
-    public constructor(private session: CryoServerWebsocketSession, private registry: CryoExtensionRegistry) {
+export class CAMPExtensionExecutor {
+    public constructor(private session: CAMPServerWebsocketSession, private registry: CAMPServerExtensionRegistry) {
     }
 
-    private async execute_if_present(extension: ICryoExtension, handler_name: Exclude<keyof ICryoExtension, "name">, message: Box<Buffer | string>): Promise<ExtensionFunctionResult> {
+    private async execute_if_present(extension: ICAMPExtension, handler_name: Exclude<keyof ICAMPExtension, "name">, message: Box<Buffer | string>): Promise<ExtensionFunctionResult> {
         if (!extension[handler_name])
             return {should_emit: true};
 
@@ -61,14 +61,14 @@ export class CryoExtensionExecutor {
 }
 
 //noinspection JSUnusedGlobalSymbols
-export class CryoExtensionRegistry {
-    public extensions: ICryoExtension[] = [];
+export class CAMPServerExtensionRegistry {
+    public extensions: ICAMPExtension[] = [];
 
-    public get_executor(session: CryoServerWebsocketSession): CryoExtensionExecutor {
-        return new CryoExtensionExecutor(session, this);
+    public get_executor(session: CAMPServerWebsocketSession): CAMPExtensionExecutor {
+        return new CAMPExtensionExecutor(session, this);
     }
 
-    public register(extension: ICryoExtension): void {
+    public register(extension: ICAMPExtension): void {
         const maybe_index = this.extensions.findIndex(existing_extension => existing_extension.name === extension.name);
         if (maybe_index >= 0)
             throw new Error(`Extension '${extension.name}' is already registered!`);
@@ -77,8 +77,8 @@ export class CryoExtensionRegistry {
     }
 
     public unregister(extension: string): void;
-    public unregister(extension: ICryoExtension): void;
-    public unregister(extension: string | ICryoExtension): void {
+    public unregister(extension: ICAMPExtension): void;
+    public unregister(extension: string | ICAMPExtension): void {
         const extension_name = typeof extension === "string" ? extension : extension.name;
         const maybe_index = this.extensions.findIndex(extension => extension.name === extension_name);
 

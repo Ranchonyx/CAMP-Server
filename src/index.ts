@@ -1,15 +1,15 @@
 import {
-    CryoWebsocketServer,
-    ICryoWebsocketServerOptions,
+    CAMPWebsocketServer,
+    ICAMPWebsocketServerOptions,
     ITokenValidator
-} from "./CryoWebsocketServer/CryoWebsocketServer.js";
+} from "./CAMPWebsocketServer/CAMPWebsocketServer.js";
 
 /**
- * Create a Cryo server
+ * Create a CAMP server
  * @param pTokenValidator - An implementation of the {@link ITokenValidator} interface to validate incoming websocket connections
- * @param options - Optional arguments, {@link ICryoWebsocketServerOptions}
+ * @param options - Optional arguments, {@link ICAMPWebsocketServerOptions}
  * */
 //noinspection JSUnusedGlobalSymbols
-export function cryo(pTokenValidator: ITokenValidator, options?: ICryoWebsocketServerOptions) {
-    return CryoWebsocketServer.Create(pTokenValidator, options);
+export function camp(pTokenValidator: ITokenValidator, options?: ICAMPWebsocketServerOptions) {
+    return CAMPWebsocketServer.Create(pTokenValidator, options);
 }

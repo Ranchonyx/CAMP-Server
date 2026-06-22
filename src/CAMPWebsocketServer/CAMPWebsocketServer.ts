@@ -8,25 +8,24 @@ import {EventEmitter} from "node:events";
 import {DebugLoggerFunction} from "node:util";
 import {CreateDebugLogger} from "../Common/Util/CreateDebugLogger.js";
 import Guard from "../Common/Util/Guard.js";
-import {CryoServerWebsocketSession} from "../CryoServerWebsocketSession/CryoServerWebsocketSession.js";
-import {ICryoExtension} from "../CryoExtension/CryoExtension.js";
-import {CryoExtensionRegistry} from "../CryoExtension/CryoExtensionRegistry.js";
-import {BackpressureProfile, BackpressureOpts} from "../BackpressureManager/BackpressureManager.js";
-import {cryoNewId} from "cryo-protocol";
-import * as wasi from "node:wasi";
+import {CAMPServerWebsocketSession} from "../CAMPServerWebsocketSession/CAMPServerWebsocketSession.js";
+import {ICAMPExtension} from "./CAMPServerExtension.js";
+import {CAMPServerExtensionRegistry} from "./CAMPServerExtensionRegistry.js";
+import {BackpressureProfile, BackpressureOpts} from "../CAMPServerWebsocketSession/BackpressureManager.js";
+import {CAMPNewId} from "camp-protocol";
 
 export interface SSLOptions {
     key: Buffer;
     cert: Buffer;
 }
 
-export interface CryoWebsocketServerEvents {
-    "session": (session: CryoServerWebsocketSession) => void;
+export interface CAMPWebsocketServerEvents {
+    "session": (session: CAMPServerWebsocketSession) => void;
 
     "listening": () => void;
 }
 
-export interface ICryoWebsocketServerOptions {
+export interface ICAMPWebsocketServerOptions {
     keepAliveIntervalMs?: number;
     port?: number;
     backpressure?: BackpressureProfile | BackpressureOpts
@@ -37,21 +36,21 @@ export interface ITokenValidator {
     validate(token: string): Promise<boolean>;
 }
 
-export interface CryoWebsocketServer {
-    on<U extends keyof CryoWebsocketServerEvents>(event: U, listener: CryoWebsocketServerEvents[U]): this;
+export interface CAMPWebsocketServer {
+    on<U extends keyof CAMPWebsocketServerEvents>(event: U, listener: CAMPWebsocketServerEvents[U]): this;
 
-    emit<U extends keyof CryoWebsocketServerEvents>(event: U, ...args: Parameters<CryoWebsocketServerEvents[U]>): boolean;
+    emit<U extends keyof CAMPWebsocketServerEvents>(event: U, ...args: Parameters<CAMPWebsocketServerEvents[U]>): boolean;
 }
 
 type SocketType = Duplex & { isAlive: boolean, sessionId: bigint, _socket: Duplex };
 
-export class CryoWebsocketServer extends EventEmitter implements CryoWebsocketServer {
+export class CAMPWebsocketServer extends EventEmitter implements CAMPWebsocketServer {
     private readonly ws_server: WebSocketServer;
     private readonly WebsocketHeartbeatInterval: ReturnType<typeof setInterval>;
-    private sessions: Array<CryoServerWebsocketSession> = [];
+    private sessions: Array<CAMPServerWebsocketSession> = [];
     private readonly log: DebugLoggerFunction;
 
-    public static Create(pTokenValidator: ITokenValidator, options?: ICryoWebsocketServerOptions) {
+    public static Create(pTokenValidator: ITokenValidator, options?: ICAMPWebsocketServerOptions) {
         const keepAliveInterval = options?.keepAliveIntervalMs ?? 15000;
         const sockPort = options?.port ?? 8080;
 
@@ -59,7 +58,7 @@ export class CryoWebsocketServer extends EventEmitter implements CryoWebsocketSe
 
         const server = options?.ssl && options.ssl.key && options.ssl.cert ? https.createServer(options.ssl) : http.createServer();
 
-        return new CryoWebsocketServer(server, pTokenValidator, keepAliveInterval, sockPort, backpressure);
+        return new CAMPWebsocketServer(server, pTokenValidator, keepAliveInterval, sockPort, backpressure);
     }
 
     private constructor(private server: http.Server | https.Server,
@@ -67,10 +66,10 @@ export class CryoWebsocketServer extends EventEmitter implements CryoWebsocketSe
                         keepAliveInterval: number,
                         socketPort: number,
                         private backpressure_options: Required<BackpressureOpts> | BackpressureProfile,
-                        private extensionRegistry = new CryoExtensionRegistry()) {
+                        private extensionRegistry = new CAMPServerExtensionRegistry()) {
 
         super();
-        this.log = CreateDebugLogger("CRYO_SERVER");
+        this.log = CreateDebugLogger("CAMP_SERVER");
 
         this.ws_server = new WebSocketServer({noServer: true});
         this.WebsocketHeartbeatInterval = setInterval(this.Heartbeat.bind(this), keepAliveInterval)
@@ -109,7 +108,7 @@ export class CryoWebsocketServer extends EventEmitter implements CryoWebsocketSe
         const full_host_url = new URL(`ws://${process.env.HOST ?? 'localhost'}${request.url!}`);
 
         const authorization = full_host_url.searchParams.get("authorization");
-        const x_cryo_sid = full_host_url.searchParams.get("x-cryo-sid");
+        const x_CAMP_sid = full_host_url.searchParams.get("x-CAMP-sid");
 
         //Check auth header
         if (!authorization) {
@@ -122,14 +121,14 @@ export class CryoWebsocketServer extends EventEmitter implements CryoWebsocketSe
             return;
         }
 
-        //Check x-cryo-sid header
-        if (!x_cryo_sid) {
+        //Check x-CAMP-sid header
+        if (!x_CAMP_sid) {
             this.__denyAndDestroy(socket, `Upgrade request for ${socketFmt} was refused. No SID supplied.`);
             return;
         }
 
         //Extract client sid
-        const clientSessionId = BigInt(x_cryo_sid);
+        const clientSessionId = BigInt(x_CAMP_sid);
 
         if (this.sessions.findIndex(s => s.sid === clientSessionId) > -1) {
             this.__denyAndDestroy(socket, `Upgrade request for ${socketFmt} was refused. The session already exists.`);
@@ -167,7 +166,7 @@ export class CryoWebsocketServer extends EventEmitter implements CryoWebsocketSe
         client.isAlive = true;
         client.sessionId = clientSid;
 
-        const session = new CryoServerWebsocketSession(client, socket, socketFmt, this.backpressure_options, this.extensionRegistry);
+        const session = new CAMPServerWebsocketSession(client, socket, socketFmt, this.backpressure_options, this.extensionRegistry);
         session.Set("__TOKEN", clientBearerToken);
         session.Set("__TYPE", "client");
 
@@ -211,23 +210,23 @@ export class CryoWebsocketServer extends EventEmitter implements CryoWebsocketSe
     }
 
     /**
-     * Create a session with another cryo server
+     * Create a session with another CAMP server
      * */
     //noinspection JSUnusedGlobalSymbols
-    public async ConnectPeer(host: string, bearer: string): Promise<CryoServerWebsocketSession> {
+    public async ConnectPeer(host: string, bearer: string): Promise<CAMPServerWebsocketSession> {
         const url = new URL(host);
-        const peerSid = cryoNewId();
+        const peerSid = CAMPNewId();
         url.searchParams.set("authorization", `Bearer ${bearer}`);
-        url.searchParams.set("x-cryo-sid", String(peerSid));
+        url.searchParams.set("x-CAMP-sid", String(peerSid));
 
         const peer = new WebSocket(url);
-        return new Promise<CryoServerWebsocketSession>((resolve, reject) => {
+        return new Promise<CAMPServerWebsocketSession>((resolve, reject) => {
             peer.on("open", () => {
                 Guard.CastAs<SocketType>(peer);
                 peer.isAlive = true;
                 peer.sessionId = peerSid;
 
-                const session = new CryoServerWebsocketSession(peer, peer._socket, `peer:${url}`, this.backpressure_options, this.extensionRegistry);
+                const session = new CAMPServerWebsocketSession(peer, peer._socket, `peer:${url}`, this.backpressure_options, this.extensionRegistry);
                 session.Set("__TYPE", "peer");
 
                 this.sessions.push(session);
@@ -259,28 +258,28 @@ export class CryoWebsocketServer extends EventEmitter implements CryoWebsocketSe
     }
 
     /**
-     * Register a server-side cryo extension
+     * Register a server-side CAMP extension
      */
     //noinspection JSUnusedGlobalSymbols
-    public RegisterExtension(extension: ICryoExtension): void {
+    public RegisterExtension(extension: ICAMPExtension): void {
         this.extensionRegistry.register(extension);
         extension.on_register(this);
     }
 
     /**
-     * Unregisters a server-side cryo-extension
+     * Unregisters a server-side CAMP-extension
      * */
     //noinspection JSUnusedGlobalSymbols
-    public UnregisterExtension(extension: ICryoExtension): void {
+    public UnregisterExtension(extension: ICAMPExtension): void {
         extension.on_unregister(this);
         this.extensionRegistry.unregister(extension);
     }
 
     /**
-     * Gets a server-side cryo extension by its name
+     * Gets a server-side CAMP extension by its name
      * */
     //noinspection JSUnusedGlobalSymbols
-    public GetExtension(extensionName: string): ICryoExtension | null {
+    public GetExtension(extensionName: string): ICAMPExtension | null {
         const extIdx = this.extensionRegistry.extensions.findIndex(ext => ext.name === extensionName);
 
         return extIdx < 0 ? null : this.extensionRegistry.extensions[extIdx];

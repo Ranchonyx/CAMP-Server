@@ -1,5 +1,5 @@
 import {CreateDebugLogger} from "../Util/CreateDebugLogger.js";
-import {CryoFrameInspector} from "../CryoFrameInspector/CryoFrameInspector.js";
+import {CAMPFrameInspector} from "../CAMPFrameInspector/CAMPFrameInspector.js";
 
 type PendingBinaryMessage = {
     timestamp: number;
@@ -14,7 +14,7 @@ export class AckTracker {
     private ewma_rtt: number | null = null;
     private alpha = 0.2;
 
-    public constructor(private MAX_STATE_DURATION_MS: number = 2500, private log = CreateDebugLogger("CRYO_SERVER_ACK")) {
+    public constructor(private MAX_STATE_DURATION_MS: number = 2500, private log = CreateDebugLogger("CAMP_SERVER_ACK")) {
     }
 
     public Track(ack: number, message: PendingBinaryMessage) {
@@ -47,7 +47,7 @@ export class AckTracker {
             if ((now - pending.timestamp) >= this.MAX_STATE_DURATION_MS) {
 
                 this.pending.delete(ack);
-                this.log(`Purged message ${CryoFrameInspector.Inspect(pending.message)} (ACK ${ack}) due to being stale for longer than ${this.MAX_STATE_DURATION_MS} milliseconds!`);
+                this.log(`Purged message ${CAMPFrameInspector.Inspect(pending.message)} (ACK ${ack}) due to being stale for longer than ${this.MAX_STATE_DURATION_MS} milliseconds!`);
                 purged++;
             }
         }

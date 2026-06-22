@@ -1,37 +1,42 @@
 import {
     ACKFrame,
-    BinaryMessageType,
-    BufferUtil, ByeFrame, CRYO_FEATURE_MASK_TRANSACTION,
-    CRYO_FLOW_BEHAVIOUR, cryoHasFeatureFlag,
-    TXCancelFrame, TXChunkFrame,
-    TXFetchFrame, TXFinishFrame,
-    TXFlowFrame, TXStartFrame
-} from "cryo-protocol";
-import {Duplex, Readable} from "node:stream";
+    BufferUtil,
+    CAMP_FEATURE_MASK_TRANSACTION,
+    CAMP_FLOW_BEHAVIOUR,
+    CAMPFrameType,
+    CAMPHasFeatureFlag,
+    TXCancelFrame,
+    TXChunkFrame,
+    TXFetchFrame,
+    TXFinishFrame,
+    TXStartFrame
+} from "camp-protocol";
+import {Readable} from "node:stream";
 import {EventEmitter} from "node:events";
-import {ICryoServerWebsocketSessionEvents} from "../CryoServerWebsocketSession.js";
-import {CryoFrameInspector} from "../../Common/CryoFrameInspector/CryoFrameInspector.js";
-import ws from "ws";
-import {AckTracker} from "../../Common/AckTracker/AckTracker.js";
+import {FileHandle, open, stat, unlink} from "node:fs/promises";
+import path from "node:path";
+import {tmpdir} from "node:os";
+import {createWriteStream} from "node:fs";
+import {finished} from "node:stream/promises";
+import Guard from "../../Common/Util/Guard.js";
 
-type CryoReadable = Readable & { txId: number };
+type CAMPReadable = Readable & { txId: number };
 
-interface CryoTransactionManagerEvents {
+interface CAMPTransactionManagerEvents {
     "tx-start": (txId: number, txName: string) => Promise<void>;
     "tx-chunk": (txId: number, data: Buffer) => Promise<void>;
     "tx-finish": (txId: number) => Promise<void>;
-    "tx-fetch": (txId: number, start: number, end: number) => Promise<void>;
+    "tx-fetch": (txId: number, start: bigint, end: bigint) => Promise<void>;
 }
 
-export interface CryoTransactionManager {
-    on<U extends keyof CryoTransactionManagerEvents>(event: U, listener: CryoTransactionManagerEvents[U]): this;
+export interface CAMPTransactionManager {
+    on<U extends keyof CAMPTransactionManagerEvents>(event: U, listener: CAMPTransactionManagerEvents[U]): this;
 
-    emit<U extends keyof CryoTransactionManagerEvents>(event: U, ...args: Parameters<CryoTransactionManagerEvents[U]>): boolean;
+    emit<U extends keyof CAMPTransactionManagerEvents>(event: U, ...args: Parameters<CAMPTransactionManagerEvents[U]>): boolean;
 }
 
-export class CryoTransactionManager extends EventEmitter implements CryoTransactionManager {
-    private outgoingFlowControl: CRYO_FLOW_BEHAVIOUR = CRYO_FLOW_BEHAVIOUR.TX_PUSH;
-    private readonly incomingStreams = new Map<number, CryoReadable>();
+export class CAMPTransactionManager extends EventEmitter implements CAMPTransactionManager {
+    private readonly incomingStreams = new Map<number, CAMPReadable>();
     private readonly outgoingStreams = new Map<number, AbortController>();
 
     public constructor(
@@ -51,11 +56,13 @@ export class CryoTransactionManager extends EventEmitter implements CryoTransact
      * @param source The {@link Readable} object to be streamed
      * @param streamName Optionally, the name of the stream
      * */
-    public async Stream(source: Readable, streamName: string = "anonymous") {
-        if (this.outgoingFlowControl !== CRYO_FLOW_BEHAVIOUR.TX_PUSH)
-            return this.StreamPull(source, streamName);
-
-        return this.StreamPush(source, streamName);
+    public async Stream(source: Readable, options: {
+        streamName: string,
+        behaviour: CAMP_FLOW_BEHAVIOUR
+    } = {streamName: "anonymous", behaviour: CAMP_FLOW_BEHAVIOUR.TX_PUSH}) {
+        if (options.behaviour === CAMP_FLOW_BEHAVIOUR.TX_PUSH)
+            return this.StreamPush(source, options.streamName);
+        return this.StreamPull(source, options.streamName);
     }
 
     /**
@@ -63,10 +70,10 @@ export class CryoTransactionManager extends EventEmitter implements CryoTransact
      * @param streamName The name of the stream to wait for - leave empty to wait for an unnamed stream
      * @param timeout The amount of milliseconds to wait until the operation should be cancelled if no matching stream was received
      * */
-    public async WaitForStream(streamName: string = "anonymous", timeout: number = 2500): Promise<CryoReadable> {
+    public async WaitForStream(streamName: string = "anonymous", timeout: number = 2500): Promise<CAMPReadable> {
         const timeoutSig = AbortSignal.timeout(timeout);
 
-        return new Promise<CryoReadable>((resolve, reject) => {
+        return new Promise<CAMPReadable>((resolve, reject) => {
             const onTxStartListener = async (txId: number, txName: string) => {
                 if (txName === streamName) {
                     if (!this.incomingStreams.has(txId)) {
@@ -99,24 +106,15 @@ export class CryoTransactionManager extends EventEmitter implements CryoTransact
     }
 
     /**
-     * Request a range of chunks from the stream - used when flow control = TX_PULL
+     * Request a range of bytes from the stream - used when flow control = TX_PULL
      * @param stream The readable object returned by {@link WaitForStream}
-     * @param start The starting index of chunks to be requested
-     * @param end The ending index of chunks to be requested
+     * @param start The starting index of bytes to be requested
+     * @param end The ending index of bytes to be requested
      * */
-    public async StreamRequestRange(stream: CryoReadable, start: number, end: number): Promise<void> {
+    public async StreamRequestRange(stream: CAMPReadable, start: bigint, end: bigint): Promise<void> {
         const fetch_ack_id = this.next_ack();
         const fetch_frame = TXFetchFrame.Serialize(this.sid, fetch_ack_id, stream.txId, start, end);
         await this.send(fetch_frame);
-    }
-
-    /**
-     * Sets the flow control for this session
-     * @param behaviour The flow control behaviour to set the client to
-     * */
-    public async SetIncomingFlowControl(behaviour: CRYO_FLOW_BEHAVIOUR) {
-        const flow_frame = TXFlowFrame.Serialize(this.sid, this.next_ack(), behaviour);
-        await this.send(flow_frame);
     }
 
     private async StreamPush(source: Readable, streamName: string): Promise<void> {
@@ -128,15 +126,18 @@ export class CryoTransactionManager extends EventEmitter implements CryoTransact
         try {
             //Send tx_start
             const start_ack_id = this.next_ack();
-            const start_frame = TXStartFrame.Serialize(this.sid, start_ack_id, new_txid, streamName);
+            const start_frame = TXStartFrame.Serialize(this.sid, start_ack_id, new_txid, streamName, -1n, CAMP_FLOW_BEHAVIOUR.TX_PUSH);
             await this.send(start_frame);
 
             //Send tx_chunk
-            let seq = 0;
-            for await(const chunk of source) {
+            let offset = 0n;
+
+            for await(const chunk of source as AsyncIterable<Buffer>) {
                 signal.throwIfAborted();
-                const chunk_frame = TXChunkFrame.Serialize(this.sid, new_txid, seq++, chunk);
+                const chunk_frame = TXChunkFrame.Serialize(this.sid, new_txid, offset++, chunk);
                 await this.send(chunk_frame);
+
+                offset += BigInt(chunk.byteLength);
             }
 
             //send tx_finish
@@ -149,44 +150,82 @@ export class CryoTransactionManager extends EventEmitter implements CryoTransact
         } finally {
             this.outgoingStreams.delete(new_txid);
             await this.waitUntilEmpty();
-
         }
     }
 
-    private async StreamPull(source: Readable, streamName: string): Promise<void> {
-        return new Promise<void>(async (resolve, reject) => {
+    private PullTransaction = class {
+        public byteLength = 0n;
+        private path: string = "";
+        private handle: FileHandle | null = null;
+
+        constructor(
+            private source: Readable,
+            public txId: number,
+        ) {
+        }
+
+        /**
+         * Buffers the stream once on disk in a temporary directory
+         * */
+        public async setup() {
+            const pat = path.join(tmpdir(), `CAMP-TX-${this.txId}`);
+            this.path = pat;
+
+            //write source to path
+            const writeStream = createWriteStream(pat);
+            this.source.pipe(writeStream, {end: true});
+            await finished(writeStream);
+
+            const stats = await stat(pat, {bigint: true});
+            this.byteLength = stats.size;
+
+            this.handle = await open(this.path, "r");
+        }
+
+        public getRangedStream(start: bigint, end: bigint) {
+            Guard.AgainstNullish(this.handle);
+            return this.handle.createReadStream({start: Number(start), end: Number(end) + 1});
+        }
+
+        public async dispose() {
+            Guard.AgainstNullish(this.handle);
+            await this.handle.close();
+            await unlink(this.path);
+        }
+    }
+
+    private StreamPull(source: Readable, streamName: string): Promise<void> {
+        return new Promise<void>(async (resolve) => {
             const start_ack_id = this.next_ack();
             const new_txid = this.next_txid();
-            const chunk_frames: Buffer[] = [];
-            let totalSize = 0;
 
             const controller = new AbortController();
             const signal = controller.signal;
             this.outgoingStreams.set(new_txid, controller);
 
-            try {
-                let i = 0;
-                for await(const chunk of source as AsyncIterable<Buffer>) {
-                    signal.throwIfAborted();
-                    chunk_frames.push(TXChunkFrame.Serialize(this.sid, new_txid, i++, chunk));
-                    totalSize += chunk.byteLength;
-                }
+            const tran = new this.PullTransaction(source, new_txid);
+            await tran.setup();
 
-                const start_frame = TXStartFrame.Serialize(this.sid, start_ack_id, new_txid, streamName, totalSize);
+            try {
+                const start_frame = TXStartFrame.Serialize(this.sid, start_ack_id, new_txid, streamName, tran.byteLength, CAMP_FLOW_BEHAVIOUR.TX_PULL);
                 await this.send(start_frame);
 
-                const fetchHandler = async (txId: number, start: number, end: number) => {
+                const fetchHandler = async (txId: number, start: bigint, end: bigint) => {
                     if (txId !== new_txid)
                         return;
 
                     try {
                         signal.throwIfAborted();
 
-                        for (let i = start; i < end; i++) {
-                            await this.send(chunk_frames[i]);
+                        const rangeStream = tran.getRangedStream(start, end);
+                        for await(const chunk of rangeStream as AsyncIterable<Buffer>) {
+                            signal.throwIfAborted();
+
+                            const chunk_frame = TXChunkFrame.Serialize(this.sid, txId, start, chunk);
+                            await this.send(chunk_frame);
                         }
 
-                        if (end >= chunk_frames.length) {
+                        if (end >= tran.byteLength) {
                             const finish_ack_id = this.next_ack();
                             const finish_frame = TXFinishFrame.Serialize(this.sid, finish_ack_id, new_txid);
 
@@ -194,21 +233,17 @@ export class CryoTransactionManager extends EventEmitter implements CryoTransact
                             this.removeListener("tx-fetch", fetchHandler);
                         }
                     } catch (reason) {
+                        await tran.dispose();
                         this.removeListener("tx-fetch", fetchHandler);
                         this.outgoingStreams.delete(new_txid);
-                        /*
-                                                this.log(`Transaction ${txId} was aborted by client.`);
-                        */
-                        return;
+                        resolve();
                     }
                 }
                 this.addListener("tx-fetch", fetchHandler);
             } catch (reason) {
+                await tran.dispose();
                 this.outgoingStreams.delete(new_txid);
-                /*
-                                this.log(`Transaction ${new_txid} was aborted by client.`);
-                */
-                return;
+                resolve();
             }
         });
     }
@@ -217,22 +252,19 @@ export class CryoTransactionManager extends EventEmitter implements CryoTransact
         const type = BufferUtil.GetType(frame);
 
         switch (type) {
-            case BinaryMessageType.TX_START:
+            case CAMPFrameType.TX_START:
                 await this.HandleTxStart(frame);
                 return;
-            case BinaryMessageType.TX_CHUNK:
+            case CAMPFrameType.TX_CHUNK:
                 await this.HandleTxChunk(frame);
                 return;
-            case BinaryMessageType.TX_FINISH:
+            case CAMPFrameType.TX_FINISH:
                 await this.HandleTxFinish(frame);
                 return;
-            case BinaryMessageType.TX_FLOW:
-                await this.HandleTxFlow(frame);
-                return;
-            case BinaryMessageType.TX_FETCH:
+            case CAMPFrameType.TX_FETCH:
                 await this.HandleTxFetch(frame);
                 return;
-            case BinaryMessageType.TX_CANCEL:
+            case CAMPFrameType.TX_CANCEL:
                 await this.HandleTxCancel(frame);
         }
     }
@@ -257,7 +289,7 @@ export class CryoTransactionManager extends EventEmitter implements CryoTransact
         });
 
         Object.defineProperty(stream, "txId", {value: txId});
-        this.incomingStreams.set(txId, stream as CryoReadable);
+        this.incomingStreams.set(txId, stream as CAMPReadable);
 
         await this.acknowledge(decodedStartFrame.ack);
 
@@ -328,18 +360,6 @@ export class CryoTransactionManager extends EventEmitter implements CryoTransact
         this.emit("tx-chunk", txId, payload);
     }
 
-    private async HandleTxFlow(frame: Buffer) {
-        if (this.abortIfMismatched())
-            return;
-
-        const decodedFlowFrame = TXFlowFrame
-            .Deserialize(frame);
-
-        this.outgoingFlowControl = decodedFlowFrame.behaviour;
-
-        await this.acknowledge(decodedFlowFrame.ack);
-    }
-
     private async acknowledge(ack_id: number) {
         const encodedACKMessage = ACKFrame
             .Serialize(this.sid, ack_id);
@@ -348,8 +368,8 @@ export class CryoTransactionManager extends EventEmitter implements CryoTransact
     }
 
     private abortIfMismatched() {
-        if (!cryoHasFeatureFlag(this.get_features(), CRYO_FEATURE_MASK_TRANSACTION)) {
-            this.destroy(4002, "PROTOCOL FEATURE MISMATCH - The connected client does not support features in the namespace 'Cryo.Transaction' !");
+        if (!CAMPHasFeatureFlag(this.get_features(), CAMP_FEATURE_MASK_TRANSACTION)) {
+            this.destroy(4002, "PROTOCOL FEATURE MISMATCH - The connected client does not support features in the namespace 'CAMP.Transaction' !");
             return true;
         }
 
