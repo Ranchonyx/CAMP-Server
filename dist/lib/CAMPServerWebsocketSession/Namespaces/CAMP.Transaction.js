@@ -128,7 +128,6 @@ export class CAMPTransactionManager extends EventEmitter {
          * */
         async setup() {
             this.path = path.join(tmpdir(), `CAMP-TX-${process.pid}-${this.txId}-${crypto.randomUUID()}`);
-            ;
             //write source to path
             const writeStream = createWriteStream(this.path);
             this.source.pipe(writeStream, { end: true });
