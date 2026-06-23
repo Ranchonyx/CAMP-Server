@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { createWriteStream } from "node:fs";
 import { finished } from "node:stream/promises";
 import Guard from "../../Common/Util/Guard.js";
+import { on } from "node:events";
 export class CAMPTransactionManager extends EventEmitter {
     sid;
     send;
@@ -138,7 +139,9 @@ export class CAMPTransactionManager extends EventEmitter {
         }
         getRangedStream(start, end) {
             Guard.AgainstNullish(this.handle);
-            return this.handle.createReadStream({ start: Number(start), end: Number(end) });
+            if (end <= start)
+                return Readable.from([]);
+            return this.handle.createReadStream({ start: Number(start), end: Number(end - 1n), autoClose: false });
         }
         async dispose() {
             if (this._disposed)
@@ -158,39 +161,47 @@ export class CAMPTransactionManager extends EventEmitter {
             this.outgoingStreams.set(new_txid, controller);
             const tran = new this.PullTransaction(source, new_txid);
             await tran.setup();
+            const handleFetch = async (txId, start, end) => {
+                try {
+                    signal.throwIfAborted();
+                    const rangeStream = tran.getRangedStream(start, end);
+                    let offset = start;
+                    for await (const chunk of rangeStream) {
+                        signal.throwIfAborted();
+                        const chunk_frame = TXChunkFrame.Serialize(this.sid, txId, offset, chunk);
+                        await this.send(chunk_frame);
+                        offset += BigInt(chunk.byteLength);
+                    }
+                    if (end >= tran.byteLength) {
+                        await this.send(TXFinishFrame.Serialize(this.sid, this.next_ack(), new_txid));
+                        await cleanup();
+                        resolve();
+                    }
+                }
+                catch (reason) {
+                    await cleanup();
+                    resolve();
+                }
+            };
+            const cleanup = async () => {
+                if (signal.aborted)
+                    return;
+                controller.abort("cleanup");
+                this.outgoingStreams.delete(new_txid);
+                await tran.dispose();
+            };
             try {
                 const start_frame = TXStartFrame.Serialize(this.sid, start_ack_id, new_txid, streamName, tran.byteLength, CAMP_FLOW_BEHAVIOUR.TX_PULL);
                 await this.send(start_frame);
-                const fetchHandler = async (txId, start, end) => {
+                for await (const params of on(this, "tx-fetch", { signal })) {
+                    const [txId, start, end] = params;
                     if (txId !== new_txid)
-                        return;
-                    try {
-                        signal.throwIfAborted();
-                        const rangeStream = tran.getRangedStream(start, end);
-                        for await (const chunk of rangeStream) {
-                            signal.throwIfAborted();
-                            const chunk_frame = TXChunkFrame.Serialize(this.sid, txId, start, chunk);
-                            await this.send(chunk_frame);
-                        }
-                        if (end >= tran.byteLength) {
-                            const finish_ack_id = this.next_ack();
-                            const finish_frame = TXFinishFrame.Serialize(this.sid, finish_ack_id, new_txid);
-                            await this.send(finish_frame);
-                            this.removeListener("tx-fetch", fetchHandler);
-                        }
-                    }
-                    catch (reason) {
-                        await tran.dispose();
-                        this.removeListener("tx-fetch", fetchHandler);
-                        this.outgoingStreams.delete(new_txid);
-                        resolve();
-                    }
-                };
-                this.addListener("tx-fetch", fetchHandler);
+                        continue;
+                    await handleFetch(txId, start, end);
+                }
             }
             catch (reason) {
-                await tran.dispose();
-                this.outgoingStreams.delete(new_txid);
+                await cleanup();
                 resolve();
             }
         });

@@ -3,11 +3,6 @@ import type http from "node:http";
 import type {Readable} from "node:stream";
 import {CAMP_FLOW_BEHAVIOUR} from "camp-protocol";
 
-export type CAMPReadable = Readable & { txId: number };
-
-/**
- * CAMPServerWebsocketSession typings
- * */
 export declare interface ICAMPServerWebsocketSessionEvents {
     "message-utf8": (message: string) => Promise<void>;
     "message-binary": (message: Buffer) => Promise<void>;
@@ -24,6 +19,23 @@ export declare interface ICAMPServerWebsocketSessionEvents {
 
 export declare type CAMPWebsocketSessionDefaultMetadata = {
     sid: bigint;
+}
+
+export declare class CAMPReadable extends Readable {
+    public txId: number;
+    public byteLength: bigint | null;
+
+    public getReceivedBytes(): bigint;
+
+    public getRemainingBytes(): bigint | null;
+
+    public isComplete(): boolean;
+
+    public getProgress(): number | null;
+
+    public isPull(): boolean;
+
+    public isPush(): boolean;
 }
 
 export declare interface CAMPServerWebsocketSession<TStorageKeys extends string = string> {

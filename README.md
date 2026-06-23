@@ -146,6 +146,7 @@ These events are emitted when the server-side session receives data from a clien
 |----------------|--------------|----------------------------------------------------------------|
 | message-utf8   | data: string | Emitted, when the session receives a utf8 text message         |
 | message-binary | data: Buffer | Emitted, when the session receives an arbitrary binary message |
+| message-error  | data: string | Emitted, when the session receives an error message |
 
 ### Statistic Events
 
