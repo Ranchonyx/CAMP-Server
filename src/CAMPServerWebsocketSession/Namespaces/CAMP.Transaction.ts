@@ -20,8 +20,7 @@ import {createWriteStream} from "node:fs";
 import {finished} from "node:stream/promises";
 import Guard from "../../Common/Util/Guard.js";
 import {on} from "node:events"
-
-type CAMPReadable = Readable & { txId: number };
+import {CAMPReadable} from "../../Common/Wrappers/CAMPReadable.js";
 
 interface CAMPTransactionManagerEvents {
     "tx-start": (txId: number, txName: string) => Promise<void>;
@@ -298,20 +297,14 @@ export class CAMPTransactionManager extends EventEmitter implements CAMPTransact
         const decodedStartFrame = TXStartFrame
             .Deserialize(frame);
 
-        const stream = new Readable({
-            read() {
-            }
-        });
-
-        const {txId, txName} = decodedStartFrame;
+        const {txId, txName, behaviour, byteLength} = decodedStartFrame;
+        const stream = new CAMPReadable(txId, byteLength, behaviour)
 
         //Handle stream
         stream.on("close", () => {
             this.incomingStreams.delete(txId);
         });
-
-        Object.defineProperty(stream, "txId", {value: txId});
-        this.incomingStreams.set(txId, stream as CAMPReadable);
+        this.incomingStreams.set(txId, stream);
 
         await this.acknowledge(decodedStartFrame.ack);
 
@@ -346,7 +339,7 @@ export class CAMPTransactionManager extends EventEmitter implements CAMPTransact
         //Handle stream
         if (!this.incomingStreams.has(txId))
             return;
-        this.incomingStreams.get(txId)!.push(null);
+        this.incomingStreams.get(txId)!.finish();
 
         await this.acknowledge(decodedFinishFrame.ack);
 
@@ -377,7 +370,7 @@ export class CAMPTransactionManager extends EventEmitter implements CAMPTransact
         if (!this.incomingStreams.has(txId))
             return;
 
-        this.incomingStreams.get(txId)!.push(payload);
+        this.incomingStreams.get(txId)!.pushChunk(payload);
 
         this.emit("tx-chunk", txId, payload);
     }
