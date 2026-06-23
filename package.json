@@ -19,7 +19,7 @@
     }
   },
   "dependencies": {
-    "camp-protocol": "^1.1.2",
+    "camp-protocol": "1.1.3",
     "ws": "^8.18.0"
   },
   "type": "module",

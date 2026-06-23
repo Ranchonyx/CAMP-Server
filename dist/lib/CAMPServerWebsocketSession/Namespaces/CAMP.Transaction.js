@@ -118,6 +118,7 @@ export class CAMPTransactionManager extends EventEmitter {
         byteLength = 0n;
         path = "";
         handle = null;
+        _disposed = false;
         constructor(source, txId) {
             this.source = source;
             this.txId = txId;
@@ -126,13 +127,13 @@ export class CAMPTransactionManager extends EventEmitter {
          * Buffers the stream once on disk in a temporary directory
          * */
         async setup() {
-            const pat = path.join(tmpdir(), `CAMP-TX-${this.txId}`);
-            this.path = pat;
+            this.path = path.join(tmpdir(), `CAMP-TX-${process.pid}-${this.txId}-${crypto.randomUUID()}`);
+            ;
             //write source to path
-            const writeStream = createWriteStream(pat);
+            const writeStream = createWriteStream(this.path);
             this.source.pipe(writeStream, { end: true });
             await finished(writeStream);
-            const stats = await stat(pat, { bigint: true });
+            const stats = await stat(this.path, { bigint: true });
             this.byteLength = stats.size;
             this.handle = await open(this.path, "r");
         }
@@ -141,9 +142,12 @@ export class CAMPTransactionManager extends EventEmitter {
             return this.handle.createReadStream({ start: Number(start), end: Number(end) });
         }
         async dispose() {
+            if (this._disposed)
+                return;
             Guard.AgainstNullish(this.handle);
             await this.handle.close();
             await unlink(this.path);
+            this._disposed = true;
         }
     };
     StreamPull(source, streamName) {
