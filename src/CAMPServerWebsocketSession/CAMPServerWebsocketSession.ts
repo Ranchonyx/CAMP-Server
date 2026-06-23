@@ -223,6 +223,10 @@ export class CAMPServerWebsocketSession<TStorageKeys extends string = string> ex
         return this.client_ack_tracker;
     }
 
+    public get id(): bigint {
+        return this.sid;
+    }
+
     //noinspection JSUnusedGlobalSymbols
     public get rx(): number {
         return this.bytes_rx;
